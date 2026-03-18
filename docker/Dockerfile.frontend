@@ -1,0 +1,22 @@
+# Frontend: React Dashboard - Multi-stage build
+# Stage 1: Builder
+FROM node:20-alpine as builder
+
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/src ./src
+COPY frontend/public ./public
+RUN npm run build
+
+# Stage 2: Runtime
+FROM node:20-alpine
+
+WORKDIR /app
+RUN npm install -g serve
+
+COPY --from=builder /app/build ./build
+
+EXPOSE 3000
+CMD ["serve", "-s", "build", "-l", "3000"]

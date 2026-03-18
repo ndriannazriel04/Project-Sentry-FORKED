@@ -1,0 +1,143 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: sentinel-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sentinel}
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel_secure_pass_change_me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - sentinel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentinel_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Student 1: Input Layer - Event Collector API
+  student-1-event-collector:
+    build:
+      context: ./student-1-input-layer
+      dockerfile: ../docker/Dockerfile.student1
+    container_name: sentinel-input-layer
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sentinel_user}:${POSTGRES_PASSWORD:-sentinel_secure_pass_change_me}@postgres:5432/${POSTGRES_DB:-sentinel}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./student-1-input-layer/src:/app/src
+      - ./infra/golden-images:/app/data/golden-images
+    networks:
+      - sentinel
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Student 2: Enrichment Layer - CTI & Analysis Engine
+  student-2-enrichment:
+    build:
+      context: ./student-2-enrichment-layer
+      dockerfile: ../docker/Dockerfile.student2
+    container_name: sentinel-enrichment-layer
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sentinel_user}:${POSTGRES_PASSWORD:-sentinel_secure_pass_change_me}@postgres:5432/${POSTGRES_DB:-sentinel}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8002:8000"
+    depends_on:
+      - postgres
+      - student-1-event-collector
+    volumes:
+      - ./student-2-enrichment-layer/src:/app/src
+      - ./infra/threat-intel:/app/data/threat-intel
+      - ./infra/geoip-db:/app/data/geoip
+    networks:
+      - sentinel
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Student 3: Intelligence Layer - Risk Scoring & AI Advisory
+  student-3-intelligence:
+    build:
+      context: ./student-3-intelligence-layer
+      dockerfile: ../docker/Dockerfile.student3
+    container_name: sentinel-intelligence-layer
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sentinel_user}:${POSTGRES_PASSWORD:-sentinel_secure_pass_change_me}@postgres:5432/${POSTGRES_DB:-sentinel}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gemini-pro}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8003:8000"
+    depends_on:
+      - postgres
+      - student-2-enrichment
+    volumes:
+      - ./student-3-intelligence-layer/src:/app/src
+      - ./infra/playbooks:/app/data/playbooks
+    networks:
+      - sentinel
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Frontend - React Dashboard
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    container_name: sentinel-frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:8001
+      REACT_APP_ENRICHMENT_URL: http://localhost:8002
+      REACT_APP_INTELLIGENCE_URL: http://localhost:8003
+    ports:
+      - "3000:3000"
+    depends_on:
+      - student-1-event-collector
+      - student-2-enrichment
+      - student-3-intelligence
+    volumes:
+      - ./frontend/src:/app/src
+    networks:
+      - sentinel
+
+  # Redis Cache (for real-time features & caching)
+  redis:
+    image: redis:7-alpine
+    container_name: sentinel-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - sentinel
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  sentinel:
+    driver: bridge
+
+volumes:
+  postgres_data:

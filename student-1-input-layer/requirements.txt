@@ -1,0 +1,34 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Asset Discovery & Event Collection
+nmap==0.0.1
+scapy==2.5.0
+pyshark==0.6
+
+# SBOM Generation
+cyclonedx-python-lib==4.0.0
+license-expression==30.2.0
+
+# Utilities
+httpx==0.25.1
+redis==5.0.1
+requests==2.31.0
+python-dateutil==2.8.2
+
+# Logging & Monitoring
+python-json-logger==2.0.7
+structlog==23.2.0
+
+# Development & Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.0
